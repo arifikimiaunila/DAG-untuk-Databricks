@@ -1,0 +1,90 @@
+resources:
+  jobs:
+    omnichannel_retail_pipeline:
+      name: "Omnichannel Retail Pipeline (Medallion)"
+      
+      # Penjadwalan harian
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: "Asia/Jakarta"
+
+      # Definisikan environment serverless default untuk task Python
+      environments:
+        - environment_key: default_env
+          spec:
+            client: "2"
+
+      tasks:
+        # 1. Buat Schema Operasional (Ops)
+        - task_key: create_ops_schema
+          sql_task:
+            file:
+              path: /Workspace/database/schemas/ops.sql
+              source: WORKSPACE
+            warehouse_id: <idmu>
+
+        # 2. Buat Schema Bronze Layer
+        - task_key: create_bronze_schema
+          depends_on:
+            - task_key: create_ops_schema
+          sql_task:
+            file:
+              path: /Workspace/database/schemas/bronze.sql
+              source: WORKSPACE
+            warehouse_id: <idmu>
+
+        # 3. Buat Schema Silver Layer
+        - task_key: create_silver_schema
+          depends_on:
+            - task_key: create_bronze_schema
+          sql_task:
+            file:
+              path: /Workspace/database/schemas/silver.sql
+              source: WORKSPACE
+            warehouse_id: <idmu>
+
+        # 4. Buat Schema Gold Layer
+        - task_key: create_gold_schema
+          depends_on:
+            - task_key: create_silver_schema
+          sql_task:
+            file:
+              path: /Workspace/database/schemas/gold.sql
+              source: WORKSPACE
+            warehouse_id: <idmu>
+
+        # 5. Validasi Raw Data
+        - task_key: validate_raw_data
+          depends_on:
+            - task_key: create_gold_schema
+          environment_key: default_env
+          spark_python_task:
+            python_file: /Workspace/src/raw_data_validation.py
+            source: WORKSPACE
+
+        # 6. Build Bronze Layer
+        - task_key: build_bronze_layer
+          depends_on:
+            - task_key: validate_raw_data
+          environment_key: default_env
+          spark_python_task:
+            python_file: /Workspace/src/build_bronze.py
+            source: WORKSPACE
+
+        # 7. Build Silver Layer
+        - task_key: build_silver_layer
+          depends_on:
+            - task_key: build_bronze_layer
+          environment_key: default_env
+          spark_python_task:
+            python_file: /Workspace/src/build_silver.py
+            source: WORKSPACE
+
+        # 8. Build Gold Layer
+        - task_key: build_gold_layer
+          depends_on:
+            - task_key: build_silver_layer
+          environment_key: default_env
+          spark_python_task:
+            python_file: /Workspace/src/build_gold.py
+            source: WORKSPACE
